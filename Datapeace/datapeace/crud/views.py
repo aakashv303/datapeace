@@ -1,85 +1,73 @@
 from .models import User
 from .serializers import UserSerializer
 import pandas as pd
-import sqlite3
-from django.core.paginator import Paginator
-from rest_framework.views import APIView
 from rest_framework.response import Response
+from rest_framework.decorators import api_view
 from rest_framework import status
-import re
+from django.core.paginator import Paginator
 
 # importing data into database
-# connex = sqlite3.connect("db.sqlite3")  
+# connex = sqlite3.connect("db.sqlite3")
 # cur = connex.cursor()
 # for chunk in pd.read_csv(r'C:\Users\Aakash Vaghela\Downloads\sqlify-result.csv', chunksize=4):
 #     chunk.to_sql(name="crud_user", con=connex, if_exists="append", index=False)
 
-class UserList(APIView):
-    def get(self, request, format=None):
-        path = (str(request.get_full_path))
-        page = request.GET.get('page')
-        limit = request.GET.get('limit')
-        sort = request.GET.get('sort')
-        name = request.GET.get('name')
-        final = []
-        if (path.find('page') == -1) and (path.find('limit') == -1) and (path.find('sort') == -1) and (path.find('name') == -1):
+@api_view(['GET', 'POST'])
+def UserList(request):
+    if request.method == 'GET':
+        # get request with parameter
+        if request.GET.get('page') or request.GET.get('limit') or request.GET.get('name') or request.GET.get('sort'):
+            page = request.GET.get('page') # getting page num from url
+            limit = request.GET.get('limit') # getting limit from url
+            name = request.GET.get('name') # getting name from url
+            sort = request.GET.get('sort') # getting sort from url
+            user_list = User.objects.filter(first_name__icontains=name) | User.objects.filter(last_name__icontains=name) #search with name
+            if len(sort) != 0:
+                users = user_list.order_by(sort) # sorting by sort parameter
+            else:
+                users = user_list
+            if len(limit) != 0:
+                paginator = Paginator(users, limit) # using limit provided by url
+            else:
+                paginator = Paginator(users, 5) # using default limit
+            userlist = paginator.get_page(page)
+            serializer = UserSerializer(userlist, many=True)
+            return Response(serializer.data, status=200)
+        else:
+            # get request without parameter
             user_list = User.objects.all()
             serializer = UserSerializer(user_list, many=True)
-            return Response(serializer.data, status=200)
-        elif len(sort) != 0:
-            user_list = User.objects.all().order_by(sort)
-            for i in user_list:
-                if re.search(name,i.first_name) or re.search(name,i.last_name):
-                    final.append(i)
-            if len(limit) == 0:
-                paginator = Paginator(final, 5)
-            else:
-                paginator = Paginator(final, limit)
-            users = paginator.get_page(page)
-            serializer = UserSerializer(users, many=True)
-            return Response(serializer.data, status=200)
-        elif len(sort) == 0 and len(name) != 0:
-            user_list = User.objects.all()
-            for i in user_list:
-                if re.search(name,i.first_name) or re.search(name,i.last_name):
-                    final.append(i)
-            if len(limit) == 0:
-                paginator = Paginator(final, 5)
-            else:
-                paginator = Paginator(final, limit)
-            users = paginator.get_page(page)
-            serializer = UserSerializer(users, many=True)
-            return Response(serializer.data, status=200)
+            return Response(serializer.data)
 
-    def post(self, request):
+    elif request.method == 'POST':
+        # create user
         serializer = UserSerializer(data=request.data)
         if serializer.is_valid():
             serializer.save()
             return Response(status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-class UserDetail(APIView):
-    def get_object(self, id):
-        try:
-            user = User.objects.get(id=id)
-            return(user)
-        except user.DoesNotExist:
-            return Response(status=status.HTTP_404_NOT_FOUND)
+@api_view(['GET', 'PUT', 'DELETE'])
+def UserDetail(request, pk):
+    try:
+        user = User.objects.get(pk=pk)
+    except User.DoesNotExist:
+        return Response(status=status.HTTP_404_NOT_FOUND)
 
-    def get(self, request, id):
-        user = self.get_object(id)
+    if request.method == 'GET':
+        # get user with id
         serializer = UserSerializer(user)
-        return Response(serializer.data, status=200)
+        return Response(serializer.data)
 
-    def put(self, request, id):
-        user = self.get_object(id)
+    elif request.method == 'PUT':
+        # update user with id
         serializer = UserSerializer(user, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
-            return Response(status=200)
+            return Response(status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    def delete(self, request, id):
-        user = self.get_object(id)
+    elif request.method == 'DELETE':
+        # delete user with id
         user.delete()
-        return Response(status=200)
+        return Response(status=status.HTTP_200_OK)
